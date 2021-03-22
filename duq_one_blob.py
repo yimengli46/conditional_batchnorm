@@ -14,7 +14,7 @@ np.random.seed(20)
 torch.manual_seed(20)
 torch.cuda.manual_seed_all(20)
 
-exp_id = 38
+exp_id = 29
 flag_train = True
 
 
@@ -61,8 +61,6 @@ class duq(nn.Module):
 		self.fc1 = nn.Linear(input_size, features)
 		self.fc2 = nn.Linear(features, features)
 		self.fc3 = nn.Linear(features, features)
-		self.bn1 = nn.BatchNorm1d(features)
-		self.bn2 = nn.BatchNorm1d(features)
 		
 		# embedding_size is # of centroids
 		# W.shape = num_centroids x num_classes x feature_size
@@ -74,8 +72,8 @@ class duq(nn.Module):
 		self.m = self.m * self.N.unsqueeze(0) # self.m.shape = torch.Size([10, 2])
 
 	def embed(self, x):
-		x = F.relu(self.bn1(self.fc1(x)))
-		x = F.relu(self.bn2(self.fc2(x)))
+		x = F.relu(self.fc1(x))
+		x = F.relu(self.fc2(x))
 		x = self.fc3(x) # x.shape = batch_size x feature_size
 		
 		# i is batch, m is embedding_size, n is num_classes (classes)
@@ -112,13 +110,16 @@ class duq(nn.Module):
 
 
 n_train_samples = 20000
-centers = [(-5, -5)]
+centers = [(0, 0)]
 train_X, train_Y = make_blobs(n_samples=n_train_samples, centers=centers, shuffle=False, random_state=40)
-ds_train = torch.utils.data.TensorDataset(torch.from_numpy(train_X).float(), torch.from_numpy(train_Y).float())
+y_train_targets = np.zeros((train_Y.shape[0], 1))
+y_train_targets[train_Y==0, 0] = 1
+
+ds_train = torch.utils.data.TensorDataset(torch.from_numpy(train_X).float(), torch.from_numpy(y_train_targets).float())
 dl_train = torch.utils.data.DataLoader(ds_train, batch_size=64, shuffle=True, drop_last=True)
 
 n_test_samples = 10000
-centers = [(-5, -5)]
+centers = [(0, 0)]
 test_X, test_Y = make_blobs(n_samples=n_test_samples, centers=centers, shuffle=False, random_state=20)
 
 #'''
@@ -156,7 +157,7 @@ if flag_train:
 
 		for iter_num, (x, y) in enumerate(dl_train):
 			x = torch.tensor(x, dtype=torch.float).to(device)
-			y = torch.tensor(y, dtype=torch.float).to(device).unsqueeze(1)
+			y = torch.tensor(y, dtype=torch.float).to(device)
 
 			model.train()
 			optimizer.zero_grad()
@@ -164,8 +165,9 @@ if flag_train:
 			x.requires_grad_(True)
 			
 			y_pred, _ = model(x)
-
-			loss =  F.binary_cross_entropy(y_pred, y)
+			
+			loss1 =  F.binary_cross_entropy(y_pred, y)
+			loss = loss1
 			
 			loss.backward()
 			optimizer.step()

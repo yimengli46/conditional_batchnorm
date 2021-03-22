@@ -14,7 +14,7 @@ np.random.seed(20)
 torch.manual_seed(20)
 torch.cuda.manual_seed_all(20)
 
-exp_id = 38
+exp_id = 39
 flag_train = True
 
 
@@ -50,7 +50,7 @@ def vis_conf(X, Y, name='temp', cats=[0,1,2]):
 	plt.close()
 
 class duq(nn.Module):
-	def __init__(self, input_size=2, features=20, num_classes=2):
+	def __init__(self, input_size=2, features=20, output_size=20, num_classes=2):
 		super(duq, self).__init__()
 
 		self.gamma = 0.99
@@ -60,15 +60,18 @@ class duq(nn.Module):
 		
 		self.fc1 = nn.Linear(input_size, features)
 		self.fc2 = nn.Linear(features, features)
-		self.fc3 = nn.Linear(features, features)
+		self.fc3 = nn.Linear(features, output_size)
 		self.bn1 = nn.BatchNorm1d(features)
 		self.bn2 = nn.BatchNorm1d(features)
+
+		self.bn1_2 = nn.BatchNorm1d(features)
+		self.bn2_2 = nn.BatchNorm1d(features)
 		
 		# embedding_size is # of centroids
 		# W.shape = num_centroids x num_classes x feature_size
-		self.W = nn.Parameter(torch.normal(torch.zeros(embedding_size, num_classes, features), 1)) 
+		self.W = nn.Parameter(torch.normal(torch.zeros(embedding_size, num_classes, output_size), 1)) 
 		
-		self.register_buffer('N', torch.ones(num_classes) * 20) # self.N.shape = torch.Size([2])
+		self.register_buffer('N', torch.ones(num_classes) * 20) # num_classes
 		self.register_buffer('m', torch.normal(torch.zeros(embedding_size, num_classes), 1)) # self.m.shape = torch.Size([10, 2])
 		
 		self.m = self.m * self.N.unsqueeze(0) # self.m.shape = torch.Size([10, 2])
@@ -76,6 +79,16 @@ class duq(nn.Module):
 	def embed(self, x):
 		x = F.relu(self.bn1(self.fc1(x)))
 		x = F.relu(self.bn2(self.fc2(x)))
+		x = self.fc3(x) # x.shape = batch_size x feature_size
+		
+		# i is batch, m is embedding_size, n is num_classes (classes)
+		x = torch.einsum('ij,mnj->imn', (x, self.W))
+		
+		return x
+
+	def embed_1(self, x):
+		x = F.relu(self.bn1_2(self.fc1(x)))
+		x = F.relu(self.bn2_2(self.fc2(x)))
 		x = self.fc3(x) # x.shape = batch_size x feature_size
 		
 		# i is batch, m is embedding_size, n is num_classes (classes)
@@ -93,32 +106,37 @@ class duq(nn.Module):
 
 		return y_pred
 
-	def forward(self, x):
-		z = self.embed(x) # z: batch_size x num_centroids x num_classes, z.shape = torch.Size([64, 10, 2])
-
+	def forward(self, x, y):
+		z = self.embed(x[y[:, 0]==1]) # z: batch_size x num_centroids x num_classes, z.shape = torch.Size([64, 10, 2])
+		z2 = self.embed(x[y[:, 1]==1])
+		z = torch.cat((z, z2), dim=0)
 		y_pred = self.bilinear(z) # y_pred.shape = torch.Size([64, 2])
 
 		return y_pred, z
 
 	def update_embeddings(self, x, y):
-		z = self.embed(x)
+		z = self.embed(x[y[:, 0]==1]) # z: batch_size x num_centroids x num_classes, z.shape = torch.Size([64, 10, 2])
+		z2 = self.embed(x[y[:, 1]==1])
+		z = torch.cat((z, z2), dim=0)
 		# normalizing value per class, assumes y is one_hot encoded
 		# implement Eq (4)
 		self.N = torch.max(self.gamma * self.N + (1 - self.gamma) * y.sum(0), torch.ones_like(self.N))
 		# compute sum of embeddings on class by class basis
-		features_sum = torch.einsum('ijk,ik->jk', (z, y))
+		features_sum = torch.einsum('ijk,ik->jk', (z, y)) # num_centroids x num_classes
 		# implement Eq (5)
 		self.m = self.gamma * self.m + (1 - self.gamma) * features_sum
 
-
 n_train_samples = 20000
-centers = [(-5, -5)]
+centers = [(0, 0), (10, 10)]
 train_X, train_Y = make_blobs(n_samples=n_train_samples, centers=centers, shuffle=False, random_state=40)
-ds_train = torch.utils.data.TensorDataset(torch.from_numpy(train_X).float(), torch.from_numpy(train_Y).float())
+y_train_targets = np.zeros((train_Y.shape[0], 2))
+y_train_targets[train_Y==0, 0] = 1
+y_train_targets[train_Y==1, 1] = 1
+ds_train = torch.utils.data.TensorDataset(torch.from_numpy(train_X).float(), torch.from_numpy(y_train_targets).float())
 dl_train = torch.utils.data.DataLoader(ds_train, batch_size=64, shuffle=True, drop_last=True)
 
 n_test_samples = 10000
-centers = [(-5, -5)]
+centers = [(0, 0), (10, 10)]
 test_X, test_Y = make_blobs(n_samples=n_test_samples, centers=centers, shuffle=False, random_state=20)
 
 #'''
@@ -141,7 +159,7 @@ test_Y = np.concatenate((test_Y, Y_grid))
 #vis_points(train_X, train_Y)
 
 device = torch.device('cuda:0')
-model = duq(num_classes=1).to(device)
+model = duq(num_classes=2).to(device)
 if not flag_train:
 	model.load_state_dict(torch.load('trained_model/duq_1_class.pth'))
 optimizer = torch.optim.Adam(model.parameters(), lr=0.001, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=False)
@@ -156,22 +174,28 @@ if flag_train:
 
 		for iter_num, (x, y) in enumerate(dl_train):
 			x = torch.tensor(x, dtype=torch.float).to(device)
-			y = torch.tensor(y, dtype=torch.float).to(device).unsqueeze(1)
+			y = torch.tensor(y, dtype=torch.float).to(device)
 
+			x0 = x[y[:, 0]==1]
+			x1 = x[y[:, 1]==1]
+			y0 = y[y[:, 0]==1]
+			y1 = y[y[:, 1]==1]
+			x = torch.cat((x0, x1), dim=0)
+			y = torch.cat((y0, y1), dim=0)
+			#assert 1==2
 			model.train()
 			optimizer.zero_grad()
 
 			x.requires_grad_(True)
 			
-			y_pred, _ = model(x)
-
+			y_pred, _ = model(x, y)
+			
 			loss =  F.binary_cross_entropy(y_pred, y)
 			
 			loss.backward()
 			optimizer.step()
 
 			with torch.no_grad():
-				#assert 1==2
 				model.update_embeddings(x, y)
 
 			epoch_loss.append(loss.item())
@@ -180,7 +204,7 @@ if flag_train:
 				print('iter = {}, Loss: {:.4f}'.format(iter_num, sum(epoch_loss) / len(epoch_loss)))
 
 print('-----------------start testing -----------------------------------')
-
+assert 1==2
 #-------------------------------------- eval on ---------------------------------
 flag_eval = True
 model.eval()
