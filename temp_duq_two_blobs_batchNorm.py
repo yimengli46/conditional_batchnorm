@@ -20,7 +20,7 @@ flag_train = True
 
 def vis_points(X, Y, name='temp', cats=[0,1,2]):
 	# define the colormap
-	cmap = plt.get_cmap('viridis')
+	cmap = plt.get_cmap('hsv')
 	cNorm = colors.Normalize(vmin=cats[0], vmax=cats[-1]+1)
 	scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cmap)
 	for c in cats[::-1]:

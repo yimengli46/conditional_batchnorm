@@ -20,7 +20,7 @@ flag_train = True
 
 def vis_points(X, Y, name='temp', cats=[0,1,2]):
 	# define the colormap
-	cmap = plt.get_cmap('viridis')
+	cmap = plt.get_cmap('hsv')
 	cNorm = colors.Normalize(vmin=cats[0], vmax=cats[-1]+1)
 	scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cmap)
 	for c in cats[::-1]:
@@ -204,7 +204,7 @@ if flag_train:
 				print('iter = {}, Loss: {:.4f}'.format(iter_num, sum(epoch_loss) / len(epoch_loss)))
 
 print('-----------------start testing -----------------------------------')
-assert 1==2
+#assert 1==2
 #-------------------------------------- eval on ---------------------------------
 flag_eval = True
 model.eval()
@@ -217,7 +217,7 @@ with torch.no_grad():
 		x = torch.tensor(x, dtype=torch.float).to(device)
 		y = test_Y[iter_num*batch_size:(iter_num+1)*batch_size]
 		y = torch.tensor(y, dtype=torch.long).to(device)
-		out, z = model.forward(x)
+		out, z = model.forward(x, y)
 		'''
 		loss = criterion(out, y)
 		if iter_num % 100 == 0:

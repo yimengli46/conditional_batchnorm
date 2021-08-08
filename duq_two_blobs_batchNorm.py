@@ -14,13 +14,13 @@ np.random.seed(20)
 torch.manual_seed(20)
 torch.cuda.manual_seed_all(20)
 
-exp_id = 35
+exp_id = 39
 flag_train = True
 
 
 def vis_points(X, Y, name='temp', cats=[0,1,2]):
 	# define the colormap
-	cmap = plt.get_cmap('viridis')
+	cmap = plt.get_cmap('hsv')
 	cNorm = colors.Normalize(vmin=cats[0], vmax=cats[-1]+1)
 	scalarMap = cmx.ScalarMappable(norm=cNorm, cmap=cmap)
 	for c in cats[::-1]:
@@ -112,7 +112,7 @@ class duq(nn.Module):
 
 n_train_samples = 20000
 centers = [(0, 0), (10, 10)]
-train_X, train_Y = make_blobs(n_samples=n_train_samples, centers=centers, shuffle=False, random_state=40)
+train_X, train_Y = make_blobs(n_samples=n_train_samples, centers=centers, cluster_std=[2,2], shuffle=False, random_state=40)
 y_train_targets = np.zeros((train_Y.shape[0], 2))
 y_train_targets[train_Y==0, 0] = 1
 y_train_targets[train_Y==1, 1] = 1
@@ -121,7 +121,9 @@ dl_train = torch.utils.data.DataLoader(ds_train, batch_size=64, shuffle=True, dr
 
 n_test_samples = 10000
 centers = [(0, 0), (10, 10)]
-test_X, test_Y = make_blobs(n_samples=n_test_samples, centers=centers, shuffle=False, random_state=20)
+#test_X, test_Y = make_blobs(n_samples=n_test_samples, centers=centers, shuffle=False, random_state=20)
+test_X, test_Y = make_blobs(n_samples=n_test_samples, centers=centers, cluster_std=[2,2], shuffle=False, random_state=20)
+
 
 #'''
 # add points to cover the whole input space
